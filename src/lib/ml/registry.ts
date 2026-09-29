@@ -1,11 +1,13 @@
 import { MLEngine, EngineType, MLModelOptions, EngineResult } from './types';
 import { imglyEngine } from './engines/imgly-engine';
 import { onnxEngine } from './engines/onnx-engine';
+import { cloudAiEngine } from './engines/cloud-ai-engine';
 
 class EngineRegistry {
   private engines: Map<EngineType, MLEngine> = new Map();
 
   constructor() {
+    this.register(cloudAiEngine);
     this.register(onnxEngine);
     this.register(imglyEngine);
   }
@@ -22,9 +24,9 @@ class EngineRegistry {
     return Array.from(this.engines.values());
   }
 
-  async processWithFallback(file: File, preferredEngine: EngineType = 'bg0', options?: MLModelOptions): Promise<EngineResult> {
+  async processWithFallback(file: File, preferredEngine: EngineType = 'cloud-ai', options?: MLModelOptions): Promise<EngineResult> {
     const startTime = performance.now();
-    const primary = this.get(preferredEngine) || onnxEngine;
+    const primary = this.get(preferredEngine) || cloudAiEngine;
 
     try {
       const blob = await primary.removeBackground(file, options);
@@ -32,10 +34,21 @@ class EngineRegistry {
       return { blob, durationMs, engineUsed: primary.id };
     } catch (primaryErr) {
       console.warn(`Primary engine ${primary.id} failed, attempting fallback...`, primaryErr);
-      const fallback = primary.id === 'bg0' ? imglyEngine : onnxEngine;
-      const blob = await fallback.removeBackground(file, options);
-      const durationMs = performance.now() - startTime;
-      return { blob, durationMs, engineUsed: fallback.id };
+      const fallbacks: EngineType[] = ['cloud-ai', 'bg0', 'imgly'];
+      for (const fbId of fallbacks) {
+        if (fbId === primary.id) continue;
+        const fallbackEngine = this.get(fbId);
+        if (fallbackEngine) {
+          try {
+            const blob = await fallbackEngine.removeBackground(file, options);
+            const durationMs = performance.now() - startTime;
+            return { blob, durationMs, engineUsed: fallbackEngine.id };
+          } catch (fbErr) {
+            console.warn(`Fallback engine ${fbId} failed:`, fbErr);
+          }
+        }
+      }
+      throw primaryErr;
     }
   }
 }
