@@ -1,4 +1,4 @@
-export type EngineType = 'bg0' | 'imgly' | 'onnx' | 'transformers' | 'cloud-ai';
+export type EngineType = 'bg0' | 'imgly' | 'onnx' | 'transformers';
 
 export interface MLModelOptions {
   model?: string;

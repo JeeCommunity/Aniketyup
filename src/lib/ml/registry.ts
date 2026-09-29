@@ -1,15 +1,13 @@
 import { MLEngine, EngineType, MLModelOptions, EngineResult } from './types';
 import { imglyEngine } from './engines/imgly-engine';
 import { onnxEngine } from './engines/onnx-engine';
-import { cloudAiEngine } from './engines/cloud-ai-engine';
 
 class EngineRegistry {
   private engines: Map<EngineType, MLEngine> = new Map();
 
   constructor() {
-    this.register(cloudAiEngine);
-    this.register(onnxEngine);
     this.register(imglyEngine);
+    this.register(onnxEngine);
   }
 
   register(engine: MLEngine) {
@@ -24,9 +22,9 @@ class EngineRegistry {
     return Array.from(this.engines.values());
   }
 
-  async processWithFallback(file: File, preferredEngine: EngineType = 'cloud-ai', options?: MLModelOptions): Promise<EngineResult> {
+  async processWithFallback(file: File, preferredEngine: EngineType = 'imgly', options?: MLModelOptions): Promise<EngineResult> {
     const startTime = performance.now();
-    const primary = this.get(preferredEngine) || cloudAiEngine;
+    const primary = this.get(preferredEngine) || imglyEngine;
 
     try {
       const blob = await primary.removeBackground(file, options);
@@ -34,7 +32,7 @@ class EngineRegistry {
       return { blob, durationMs, engineUsed: primary.id };
     } catch (primaryErr) {
       console.warn(`Primary engine ${primary.id} failed, attempting fallback...`, primaryErr);
-      const fallbacks: EngineType[] = ['cloud-ai', 'bg0', 'imgly'];
+      const fallbacks: EngineType[] = ['imgly', 'bg0'];
       for (const fbId of fallbacks) {
         if (fbId === primary.id) continue;
         const fallbackEngine = this.get(fbId);

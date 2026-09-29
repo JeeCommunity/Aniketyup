@@ -28,8 +28,8 @@ export const BackgroundRemover: React.FC = () => {
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
-  // Default to cloud-ai for 100% hair & edge accuracy
-  const [selectedEngine, setSelectedEngine] = useState<EngineType>('cloud-ai');
+  // Default to imgly for high precision ISNet background removal
+  const [selectedEngine, setSelectedEngine] = useState<EngineType>('imgly');
   const [bgType, setBgType] = useState<'transparent' | 'color' | 'blur' | 'gradient'>('transparent');
   const [bgColor, setBgColor] = useState<string>('#ffffff');
   const [blurAmount, setBlurAmount] = useState<number>(15);
@@ -113,48 +113,7 @@ export const BackgroundRemover: React.FC = () => {
     }
   };
 
-  // Smart Canvas Fallback
-  const runSmartCanvasCutout = (file: File): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas context unavailable'));
-          return;
-        }
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imgData.data;
-
-        const rTopLeft = data[0], gTopLeft = data[1], bTopLeft = data[2];
-        const rTopRight = data[(canvas.width - 1) * 4], gTopRight = data[(canvas.width - 1) * 4 + 1], bTopRight = data[(canvas.width - 1) * 4 + 2];
-        
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i], g = data[i+1], b = data[i+2];
-          const diffTopLeft = Math.abs(r - rTopLeft) + Math.abs(g - gTopLeft) + Math.abs(b - bTopLeft);
-          const diffTopRight = Math.abs(r - rTopRight) + Math.abs(g - gTopRight) + Math.abs(b - bTopRight);
-          
-          if ((diffTopLeft < 45 || diffTopRight < 45) || (r > 235 && g > 235 && b > 235)) {
-            data[i+3] = 0;
-          }
-        }
-
-        ctx.putImageData(imgData, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('Canvas blob generation failed'));
-        }, 'image/png');
-      };
-      img.onerror = () => reject(new Error('Image load failed'));
-      img.src = URL.createObjectURL(file);
-    });
-  };
-
-  const optimizeImage = (file: File, maxDim = 1200): Promise<File> => {
+  const optimizeImage = (file: File, maxDim = 1000): Promise<File> => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -252,46 +211,32 @@ export const BackgroundRemover: React.FC = () => {
 
     setIsProcessing(true);
     setErrorMsg(null);
-    setProgressPercent(15);
-    setProgressText(`Processing with ${selectedEngine}...`);
+    setProgressPercent(10);
+    setProgressText('Preparing image & loading AI model (first time may take 20-30s)...');
 
     try {
-      const optimizedFile = await optimizeImage(selectedFile, 1200);
+      const optimizedFile = await optimizeImage(selectedFile, 1000);
 
-      setProgressPercent(40);
-      setProgressText('Running hair & edge segmentation model...');
+      setProgressPercent(25);
+      setProgressText('Downloading & initializing WebAssembly AI model...');
 
-      let blob: Blob;
-      try {
-        const res = await engineRegistry.processWithFallback(optimizedFile, selectedEngine, {
-          progress: (key: string, current: number, total: number) => {
-            const pct = Math.round((current / (total || 1)) * 40) + 40;
-            setProgressPercent(Math.min(pct, 90));
-            setProgressText(`Engine: ${key} (${Math.round((current / (total || 1)) * 100)}%)`);
-          }
-        });
-        blob = res.blob;
-      } catch (aiErr) {
-        console.warn('Selected engine failed, falling back to smart canvas...', aiErr);
-        setProgressText('Using high-definition smart fallback...');
-        blob = await runSmartCanvasCutout(optimizedFile);
-      }
+      const res = await engineRegistry.processWithFallback(optimizedFile, selectedEngine, {
+        progress: (key: string, current: number, total: number) => {
+          const percentage = total > 0 ? Math.round((current / total) * 65) + 25 : 50;
+          setProgressPercent(Math.min(percentage, 90));
+          setProgressText(`Loading AI model weights (${key})...`);
+        }
+      });
 
       setProgressPercent(95);
       setProgressText('Applying background settings...');
-      const finalUrl = await compositeBackground(blob);
+      const finalUrl = await compositeBackground(res.blob);
       setResultUrl(finalUrl);
       setProgressPercent(100);
       setProgressText('Complete!');
     } catch (err: any) {
       console.error('Background removal error:', err);
-      try {
-        const fallbackBlob = await runSmartCanvasCutout(selectedFile);
-        const finalUrl = await compositeBackground(fallbackBlob);
-        setResultUrl(finalUrl);
-      } catch (fallbackErr: any) {
-        setErrorMsg(fallbackErr?.message || 'Processing could not finish.');
-      }
+      setErrorMsg(err?.message || 'Background removal failed. Please check your internet connection for initial AI model download.');
     } finally {
       setIsProcessing(false);
     }
@@ -311,13 +256,13 @@ export const BackgroundRemover: React.FC = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Page Header */}
       <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Cloud AI HD (RMBG-1.4) + Local WASM Registry</span>
+          <span>100% Free & Unlimited • WebAssembly AI Engine</span>
         </div>
         <h1 className="text-3xl font-bold tracking-tight text-white">Advanced Background Remover Studio</h1>
         <p className="text-slate-400 text-sm max-w-2xl">
-          Multi-engine selector with Cloud AI High-Accuracy model for perfect hair & edge segmentation.
+          High-precision browser AI model with full download support. First run downloads AI weights once, then runs instantly offline.
         </p>
       </div>
 
@@ -376,7 +321,7 @@ export const BackgroundRemover: React.FC = () => {
                         onClick={() => setSelectedEngine(engine.id)}
                         className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                           selectedEngine === engine.id
-                            ? 'border-emerald-500 bg-emerald-500/10 text-white'
+                            ? 'border-indigo-500 bg-indigo-500/10 text-white'
                             : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
                         }`}
                       >
@@ -392,7 +337,7 @@ export const BackgroundRemover: React.FC = () => {
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-xl p-6 text-center cursor-pointer bg-slate-950/50 transition-all"
+                  className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer bg-slate-950/50 transition-all"
                 >
                   <input
                     ref={fileInputRef}
@@ -401,7 +346,7 @@ export const BackgroundRemover: React.FC = () => {
                     className="hidden"
                     onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                   />
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-3">
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-3">
                     <Upload className="w-6 h-6" />
                   </div>
                   <p className="text-sm font-medium text-white mb-1">Click to upload image</p>
@@ -537,17 +482,17 @@ export const BackgroundRemover: React.FC = () => {
               <button
                 onClick={handleRemoveBackground}
                 disabled={!selectedFile || isProcessing}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isProcessing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Processing with AI...</span>
+                    <span>Processing AI Model...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Remove Background (HD)</span>
+                    <span>Remove Background</span>
                   </>
                 )}
               </button>
@@ -577,22 +522,22 @@ export const BackgroundRemover: React.FC = () => {
             </div>
 
             {isProcessing && (
-              <div className="bg-emerald-950/80 border border-emerald-500/40 rounded-2xl p-6 space-y-4 shadow-xl">
-                <div className="flex items-center justify-between text-sm font-medium text-emerald-200">
+              <div className="bg-indigo-950/80 border border-indigo-500/40 rounded-2xl p-6 space-y-4 shadow-xl">
+                <div className="flex items-center justify-between text-sm font-medium text-indigo-200">
                   <span className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                    <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
                       <Loader2 className="w-5 h-5 animate-spin text-white" />
                     </div>
                     <div>
-                      <p className="font-bold text-white">Running Engine ({selectedEngine})</p>
-                      <p className="text-xs text-emerald-300">{progressText}</p>
+                      <p className="font-bold text-white">Downloading & Running AI Model</p>
+                      <p className="text-xs text-indigo-300">{progressText}</p>
                     </div>
                   </span>
-                  <span className="text-lg font-extrabold text-emerald-400">{progressPercent}%</span>
+                  <span className="text-lg font-extrabold text-indigo-400">{progressPercent}%</span>
                 </div>
-                <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden p-0.5 border border-emerald-500/20">
+                <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden p-0.5 border border-indigo-500/20">
                   <div 
-                    className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 h-full rounded-full transition-all duration-300"
+                    className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full rounded-full transition-all duration-300"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
@@ -608,7 +553,7 @@ export const BackgroundRemover: React.FC = () => {
                   <p className="text-slate-400 text-sm font-medium">Upload an image or choose a sample photo to start</p>
                 </div>
               ) : resultUrl ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full progress-view">
                   <div className="space-y-2 text-center">
                     <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Original</span>
                     <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 h-72 flex items-center justify-center overflow-hidden">
@@ -632,14 +577,14 @@ export const BackgroundRemover: React.FC = () => {
                   <div className="bg-slate-950 rounded-2xl p-6 border border-slate-800 max-h-[400px] flex items-center justify-center overflow-hidden mx-auto">
                     <img src={originalPreview} alt="Preview" className="max-h-[350px] max-w-full object-contain rounded-xl" />
                   </div>
-                  <p className="text-xs text-slate-400">Click "Remove Background (HD)" to process this image.</p>
+                  <p className="text-xs text-slate-400">Click "Remove Background" to process this image.</p>
                 </div>
               )}
             </div>
 
             <div className="pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-              <span>Engine Registry: <strong className="text-emerald-300">Multi-Engine Active (Cloud HD + WASM)</strong></span>
-              <span className="text-emerald-400 font-medium">100% Precise Hair & Edge Segmentation</span>
+              <span>Engine Registry: <strong className="text-indigo-300">IMGLY / ONNX WebAssembly</strong></span>
+              <span className="text-indigo-400 font-medium">100% Free & Unlimited</span>
             </div>
           </div>
         </div>
